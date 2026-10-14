@@ -241,7 +241,7 @@ var (
 		{name: "offthreads", description: "官方模式扫描并发数", defaultValue: "100"},
 		{name: "offport", description: "官方模式详细测试与测速端口", defaultValue: "443"},
 		{name: "offdelay", description: "官方模式延迟阈值（毫秒）", defaultValue: "500"},
-		{name: "offdc", description: "指定数据中心；不填时自动选择最低延迟数据中心", defaultValue: ""},
+		{name: "offdc", description: "指定数据中心，支持英文逗号分隔多个（如 HKG,SJC,SIN）；不填时自动选择最低延迟数据中心", defaultValue: ""},
 		{name: "offspeedlimit", description: "官方模式测速达标结果上限；0 表示关闭官方测速", defaultValue: "5"},
 		{name: "offspeedmin", description: "官方模式测速达标下限，单位 MB/s", defaultValue: "0.1"},
 		{name: "offurl", description: "官方模式测速下载地址；auto 表示由后端自动选择内置测速源", defaultValue: autoSpeedURLValue},
@@ -252,7 +252,7 @@ var (
 		{name: "nsbthreads", description: "非标模式扫描并发数", defaultValue: "100"},
 		{name: "nsbdelay", description: "非标模式延迟阈值（毫秒）；0 表示不筛延迟", defaultValue: "0"},
 		{name: "nsbfallbackport", description: "非标输入缺省端口；不填时随 TLS 自动使用 443/80", defaultValue: "0"},
-		{name: "nsbdc", description: "非标模式指定结果数据中心；留空不限制", defaultValue: ""},
+		{name: "nsbdc", description: "非标模式指定结果数据中心，支持英文逗号分隔多个（如 HKG,SJC,SIN）；留空不限制", defaultValue: ""},
 		{name: "nsbspeedtest", description: "非标测速线程数；0 表示不测速。多 IP 并发影响实际速度，需要准确应设为 1", defaultValue: "0"},
 		{name: "nsburl", description: "非标模式测速下载地址；auto 表示由后端自动选择内置测速源", defaultValue: autoSpeedURLValue},
 		{name: "nsbtls", description: "非标模式是否启用 TLS", defaultValue: "true"},
@@ -278,13 +278,13 @@ func registerCLIFlags() *cliConfig {
 	flag.IntVar(&cfg.port, "offport", 443, "目标测试端口")
 	flag.IntVar(&cfg.offDelay, "offdelay", 500, "官方延迟阈值（毫秒）")
 	flag.IntVar(&cfg.nsbDelay, "nsbdelay", 0, "非标延迟阈值（毫秒）；0 表示不筛延迟")
-	flag.StringVar(&cfg.dc, "offdc", "", "官方模式指定数据中心，不填则自动选择最低延迟数据中心")
+	flag.StringVar(&cfg.dc, "offdc", "", "官方模式指定数据中心，支持英文逗号分隔多个（如 HKG,SJC,SIN），不填则自动选择最低延迟数据中心")
 	flag.StringVar(&cfg.file, "nsbfile", "", "非标模式输入文件路径")
 	flag.StringVar(&cfg.sourceURL, "nsbsourceurl", "", "非标模式网络输入 URL")
 	flag.IntVar(&cfg.nsbFallbackPort, "nsbfallbackport", 0, "非标输入缺省端口；不填时随 TLS 自动使用 443/80")
 	flag.StringVar(&cfg.outIPType, "outiptype", "all", "导出/上传 IP 类型筛选：all、ipv4 或 ipv6")
 	flag.StringVar(&cfg.outQualified, "outqualified", "all", "导出/上传合格结果筛选：all、qualified 或 unqualified")
-	flag.StringVar(&cfg.nsbDC, "nsbdc", "", "非标模式指定结果数据中心")
+	flag.StringVar(&cfg.nsbDC, "nsbdc", "", "非标模式指定结果数据中心，支持英文逗号分隔多个（如 HKG,SJC,SIN）")
 	flag.StringVar(&cfg.outFile, "out", "cfdata-results", "输出文件名")
 	flag.IntVar(&cfg.startRow, "outstartrow", 1, "导出/上传开始行（筛选后第 1 行起计）")
 	flag.IntVar(&cfg.endRow, "outendrow", 20, "导出/上传结束行；0 表示至末尾")
@@ -775,13 +775,13 @@ func buildCLIConfigHelp() []cliConfigHelp {
 		{Name: "offport", Description: "官方模式测试端口", Default: "443"},
 		{Name: "offdelay", Description: "官方延迟阈值，单位毫秒", Default: "500"},
 		{Name: "nsbdelay", Description: "非标延迟阈值，单位毫秒；0=不筛延迟", Default: "0"},
-		{Name: "offdc", Description: "官方模式指定数据中心；留空自动选择最低延迟数据中心", Default: ""},
+		{Name: "offdc", Description: "官方模式指定数据中心，支持英文逗号分隔多个（如 HKG,SJC,SIN）；留空自动选择最低延迟数据中心", Default: ""},
 		{Name: "offspeedlimit", Description: "官方模式测速达标结果上限；0 表示关闭官方测速", Default: "5"},
 		{Name: "offspeedmin", Description: "官方模式测速达标下限，单位 MB/s", Default: "0.1"},
 		{Name: "nsbfile", Description: "非标模式输入文件路径", Default: ""},
 		{Name: "nsbsourceurl", Description: "非标模式网络输入 URL", Default: ""},
 		{Name: "nsbfallbackport", Description: "非标输入缺省端口；不填时随 TLS 自动使用 443/80；显式设置时必须为 1-65535", Default: "自动"},
-		{Name: "nsbdc", Description: "非标模式指定结果数据中心；留空不限制", Default: ""},
+		{Name: "nsbdc", Description: "非标模式指定结果数据中心，支持英文逗号分隔多个（如 HKG,SJC,SIN）；留空不限制", Default: ""},
 		{Name: "nsbtls", Description: "非标模式启用 TLS；缺省端口随 TLS 为 443/80", Default: "true", Options: []string{"true", "false"}},
 		{Name: "nsbcompact", Description: "非标模式本地 CSV 是否默认精简字段", Default: "true", Options: []string{"true", "false"}},
 		{Name: "nsbresultlimit", Description: "非标模式延迟测试结果上限；必须为非 0 正整数", Default: "1000"},
@@ -1162,21 +1162,22 @@ func runOfficialCLI(cfg *cliConfig) error {
 		return errors.New("官方模式未发现有效 IP")
 	}
 
-	dc := strings.TrimSpace(cfg.dc)
-	if dc == "" {
-		dc = pickBestDataCenter(scanResults)
-		if dc == "" {
+	dcs := parseDCList(cfg.dc)
+	if len(dcs) == 0 {
+		best := pickBestDataCenter(scanResults)
+		if best == "" {
 			fmt.Printf("%s[official]%s 无法确定数据中心，仅输出扫描结果\n", ansiYellow, ansiReset)
 			return writeCLIExportAndMaybeUpload(cfg, applyCLIExportFilters(cfg, officialScanRows(scanResults, scanMode), cfg.speedMin), "official-scan")
 		}
-		fmt.Printf("%s[official]%s 自动选择数据中心: %s\n", ansiGreen, ansiReset, colorize(dc, ansiBold+ansiGreen))
+		dcs = []string{best}
+		fmt.Printf("%s[official]%s 自动选择数据中心: %s\n", ansiGreen, ansiReset, colorize(best, ansiBold+ansiGreen))
 	}
 
 	session.testMutex.Lock()
 	session.testResults = nil
 	session.testMutex.Unlock()
 	if err := session.runTaskSync(func(ctx context.Context, session *appSession) {
-		runDetailedTest(ctx, session, dc, cfg.port, cfg.delay, scanMode)
+		runDetailedTest(ctx, session, dcs, cfg.port, cfg.delay, scanMode)
 	}); err != nil {
 		return cliTaskError(err)
 	}

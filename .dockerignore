@@ -1,0 +1,25 @@
+# 构建只需要 combined_refactor/ 下的 Go 源码
+.git/
+.github/
+.bak/
+combined_refactor/.bak/
+app/
+img/
+release_assets/
+*.md
+!combined_refactor/*.md
+
+# 运行时数据，由 Dockerfile 的 fetcher 阶段重新下载，不从构建上下文带入
+locations.json
+ips-v4.txt
+ips-v6.txt
+GeoLite2-ASN.mmdb
+cfdata-config.json
+ip.csv
+ip.txt
+*.mmdb
+
+# 构建产物
+cfdata
+cfdata-test
+cfdata-*

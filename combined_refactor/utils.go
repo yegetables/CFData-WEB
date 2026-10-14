@@ -453,6 +453,66 @@ func getIPType(ip string) string {
 	return "IPv6"
 }
 
+// parseDCList 解析数据中心输入，支持英文逗号分隔多个代码（如 HKG,SJC,SIN）。
+// 结果统一转为大写、去掉空白、按输入顺序去重；空输入返回空切片（表示不限制）。
+func parseDCList(spec string) []string {
+	list := make([]string, 0, 4)
+	seen := map[string]struct{}{}
+	for _, part := range strings.Split(spec, ",") {
+		code := strings.ToUpper(strings.TrimSpace(part))
+		if code == "" {
+			continue
+		}
+		if _, ok := seen[code]; ok {
+			continue
+		}
+		seen[code] = struct{}{}
+		list = append(list, code)
+	}
+	return list
+}
+
+// dcCodeSet 把数据中心代码列表转成大写集合，便于忽略大小写的匹配。
+func dcCodeSet(list []string) map[string]struct{} {
+	set := make(map[string]struct{}, len(list))
+	for _, code := range list {
+		code = strings.ToUpper(strings.TrimSpace(code))
+		if code == "" {
+			continue
+		}
+		set[code] = struct{}{}
+	}
+	return set
+}
+
+// dcSetMatches 判断某个数据中心代码是否命中集合；集合为空时视为不限制，恒为真。
+func dcSetMatches(set map[string]struct{}, code string) bool {
+	if len(set) == 0 {
+		return true
+	}
+	_, ok := set[strings.ToUpper(strings.TrimSpace(code))]
+	return ok
+}
+
+// joinDCList 用英文逗号把数据中心列表拼回展示字符串。
+func joinDCList(list []string) string {
+	return strings.Join(list, ",")
+}
+
+// missingDCList 返回列表中未出现在 observed 里的代码，保持输入顺序。
+func missingDCList(list []string, observed map[string]struct{}) []string {
+	if len(list) == 0 {
+		return nil
+	}
+	missing := make([]string, 0, len(list))
+	for _, code := range list {
+		if _, ok := observed[strings.ToUpper(strings.TrimSpace(code))]; !ok {
+			missing = append(missing, code)
+		}
+	}
+	return missing
+}
+
 func safeFilename(name string) string {
 	name = strings.TrimSpace(name)
 	if name == "" {
