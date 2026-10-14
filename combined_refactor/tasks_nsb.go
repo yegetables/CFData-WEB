@@ -25,6 +25,84 @@ type nsbFailureRecord struct {
 	detail string
 }
 
+// nsbColoTracker 记录本次扫描中实际出现过的数据中心代码（并发安全）。
+type nsbColoTracker struct {
+	mu   sync.Mutex
+	seen map[string]struct{}
+}
+
+func newNSBColoTracker() *nsbColoTracker {
+	return &nsbColoTracker{seen: map[string]struct{}{}}
+}
+
+func (t *nsbColoTracker) mark(colo string) {
+	if t == nil {
+		return
+	}
+	code := strings.ToUpper(strings.TrimSpace(colo))
+	if code == "" {
+		return
+	}
+	t.mu.Lock()
+	t.seen[code] = struct{}{}
+	t.mu.Unlock()
+}
+
+func (t *nsbColoTracker) snapshot() map[string]struct{} {
+	out := map[string]struct{}{}
+	if t == nil {
+		return out
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for code := range t.seen {
+		out[code] = struct{}{}
+	}
+	return out
+}
+
+// nsbDCFilter 非标模式的数据中心筛选条件，支持英文逗号分隔多个代码（如 HKG,SJC,SIN），忽略大小写。
+type nsbDCFilter struct {
+	list    []string
+	set     map[string]struct{}
+	tracker *nsbColoTracker
+}
+
+func newNSBDCFilter(spec string) *nsbDCFilter {
+	list := parseDCList(spec)
+	return &nsbDCFilter{list: list, set: dcCodeSet(list), tracker: newNSBColoTracker()}
+}
+
+func (f *nsbDCFilter) enabled() bool {
+	return f != nil && len(f.set) > 0
+}
+
+func (f *nsbDCFilter) label() string {
+	if f == nil {
+		return ""
+	}
+	return joinDCList(f.list)
+}
+
+// match 判断出站 colo 是否命中筛选条件，并顺手记录该 colo 本次出现过；未启用筛选时恒为真。
+func (f *nsbDCFilter) match(colo string) bool {
+	if f != nil && f.tracker != nil {
+		f.tracker.mark(colo)
+	}
+	if !f.enabled() {
+		return true
+	}
+	return dcSetMatches(f.set, colo)
+}
+
+// missing 返回本次扫描中从未出现过的目标数据中心代码。
+func (f *nsbDCFilter) missing() []string {
+	if !f.enabled() {
+		return nil
+	}
+	return missingDCList(f.list, f.tracker.snapshot())
+}
+
 func resolveHostToIPs(ctx context.Context, host string, maxIPs int) ([]string, error) {
 	if addr, err := netip.ParseAddr(host); err == nil {
 		return []string{addr.String()}, nil
@@ -89,7 +167,7 @@ func resolveHostToIPs(ctx context.Context, host string, maxIPs int) ([]string, e
 	return result, nil
 }
 
-func scanNSBEntryHTTP(ctx context.Context, item string, fallbackPort int, enableTLS bool, delay int, targetDC string, inputIndex int) (*iptestResult, *nsbFailureRecord) {
+func scanNSBEntryHTTP(ctx context.Context, item string, fallbackPort int, enableTLS bool, delay int, dcFilter *nsbDCFilter, inputIndex int) (*iptestResult, *nsbFailureRecord) {
 	mul := latencyMultiplier(scanModeHTTPing, enableTLS)
 	effectiveDelay := int(float64(delay) * mul)
 
@@ -200,8 +278,8 @@ func scanNSBEntryHTTP(ctx context.Context, item string, fallbackPort int, enable
 	if dataCenter == "" {
 		return nil, &nsbFailureRecord{index: inputIndex, ipAddr: ipAddr, port: portStr, phase: "scan", reason: "Trace校验失败", detail: "trace 中未返回 colo 字段"}
 	}
-	if strings.TrimSpace(targetDC) != "" && !strings.EqualFold(dataCenter, strings.TrimSpace(targetDC)) {
-		return nil, &nsbFailureRecord{index: inputIndex, ipAddr: ipAddr, port: portStr, phase: "scan", reason: "数据中心不匹配", detail: fmt.Sprintf("colo=%s, target=%s", dataCenter, targetDC)}
+	if !dcFilter.match(dataCenter) {
+		return nil, &nsbFailureRecord{index: inputIndex, ipAddr: ipAddr, port: portStr, phase: "scan", reason: "数据中心不匹配", detail: fmt.Sprintf("colo=%s, target=%s", dataCenter, dcFilter.label())}
 	}
 
 	loc := locationMap[dataCenter]
@@ -232,7 +310,7 @@ func scanNSBEntryHTTP(ctx context.Context, item string, fallbackPort int, enable
 	}, nil
 }
 
-func scanNSBEntry(ctx context.Context, item string, fallbackPort int, enableTLS bool, delay int, targetDC string, inputIndex int) (*iptestResult, *nsbFailureRecord) {
+func scanNSBEntry(ctx context.Context, item string, fallbackPort int, enableTLS bool, delay int, dcFilter *nsbDCFilter, inputIndex int) (*iptestResult, *nsbFailureRecord) {
 	parts := strings.Fields(item)
 	if len(parts) < 1 || len(parts) > 2 {
 		record := &nsbFailureRecord{index: inputIndex, phase: "scan", reason: "格式错误", detail: "需要每行格式为: IP [端口]"}
@@ -356,8 +434,8 @@ func scanNSBEntry(ctx context.Context, item string, fallbackPort int, enableTLS 
 	if dataCenter == "" {
 		return nil, &nsbFailureRecord{index: inputIndex, ipAddr: ipAddr, port: portStr, phase: "scan", reason: "Trace校验失败", detail: "trace 中未返回 colo 字段"}
 	}
-	if strings.TrimSpace(targetDC) != "" && !strings.EqualFold(dataCenter, strings.TrimSpace(targetDC)) {
-		return nil, &nsbFailureRecord{index: inputIndex, ipAddr: ipAddr, port: portStr, phase: "scan", reason: "数据中心不匹配", detail: fmt.Sprintf("colo=%s, target=%s", dataCenter, targetDC)}
+	if !dcFilter.match(dataCenter) {
+		return nil, &nsbFailureRecord{index: inputIndex, ipAddr: ipAddr, port: portStr, phase: "scan", reason: "数据中心不匹配", detail: fmt.Sprintf("colo=%s, target=%s", dataCenter, dcFilter.label())}
 	}
 
 	loc := locationMap[dataCenter]
@@ -640,7 +718,11 @@ done:
 }
 
 func runNSBTask(ctx context.Context, session *appSession, fileName, fileContent, outFile string, maxThreads, fallbackPort, speedTest int, speedURL string, enableTLS bool, delay int, resultLimit int, targetDC string, speedMin float64, speedLimit int, compact bool, scanMode string) {
+	dcFilter := newNSBDCFilter(targetDC)
 	session.sendWSMessage("log", fmt.Sprintf("开始非标优选：%s", fileName))
+	if dcFilter.enabled() {
+		session.sendWSMessage("log", fmt.Sprintf("数据中心筛选：%s", dcFilter.label()))
+	}
 
 	tmpFile, err := os.CreateTemp(".", "cfdata-nsb-*.txt")
 	if err != nil {
@@ -761,9 +843,9 @@ func runNSBTask(ctx context.Context, session *appSession, fileName, fileContent,
 		var res *iptestResult
 		var failure *nsbFailureRecord
 		if scanMode == scanModeHTTPing {
-			res, failure = scanNSBEntryHTTP(itemCtx, item, fallbackPort, enableTLS, delay, targetDC, idx)
+			res, failure = scanNSBEntryHTTP(itemCtx, item, fallbackPort, enableTLS, delay, dcFilter, idx)
 		} else {
-			res, failure = scanNSBEntry(itemCtx, item, fallbackPort, enableTLS, delay, targetDC, idx)
+			res, failure = scanNSBEntry(itemCtx, item, fallbackPort, enableTLS, delay, dcFilter, idx)
 		}
 		if res != nil {
 			res.originalInput = entry.originalInput
@@ -787,6 +869,8 @@ func runNSBTask(ctx context.Context, session *appSession, fileName, fileContent,
 
 	if wasCanceled || ctx.Err() != nil {
 		session.sendWSMessage("log", "非标优选延迟扫描已终止，正在整理已扫描到的数据...")
+	} else if missing := dcFilter.missing(); len(missing) > 0 {
+		session.sendWSMessage("log", fmt.Sprintf("数据中心 %s 在本次扫描中无匹配，已跳过", joinDCList(missing)))
 	}
 
 	if len(nsbResults) == 0 {

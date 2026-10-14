@@ -450,28 +450,39 @@ func runOfficialTask(ctx context.Context, session *appSession, ipType int, scanM
 	session.sendWSMessage("scan_complete_wait_dc", dcList)
 }
 
-func runDetailedTest(ctx context.Context, session *appSession, selectedDC string, port int, delay int, scanMode string) {
+func runDetailedTest(ctx context.Context, session *appSession, selectedDCs []string, port int, delay int, scanMode string) {
+	dcSet := dcCodeSet(selectedDCs)
+	dcLabel := joinDCList(selectedDCs)
+
 	var testIPList []string
 	scanByIP := make(map[string]ScanResult)
+	observed := map[string]struct{}{}
 	session.scanMutex.Lock()
 	for _, res := range session.scanResults {
-		if selectedDC == "" || res.DataCenter == selectedDC {
+		if strings.TrimSpace(res.DataCenter) != "" {
+			observed[strings.ToUpper(strings.TrimSpace(res.DataCenter))] = struct{}{}
+		}
+		if dcSetMatches(dcSet, res.DataCenter) {
 			testIPList = append(testIPList, res.IP)
 			scanByIP[res.IP] = res
 		}
 	}
 	session.scanMutex.Unlock()
 
+	if missing := missingDCList(selectedDCs, observed); len(missing) > 0 {
+		session.sendWSMessage("log", fmt.Sprintf("数据中心 %s 在本轮扫描结果中无匹配，已跳过", joinDCList(missing)))
+	}
+
 	if len(testIPList) == 0 {
-		if strings.TrimSpace(selectedDC) == "" {
+		if len(selectedDCs) == 0 {
 			session.sendWSMessage("error", "没有找到可测试的 IP 地址")
 		} else {
-			session.sendWSMessage("error", fmt.Sprintf("数据中心 %s 未找到可测试的 IP 地址", selectedDC))
+			session.sendWSMessage("error", fmt.Sprintf("数据中心 %s 未找到可测试的 IP 地址", dcLabel))
 		}
 		return
 	}
 
-	session.sendWSMessage("log", fmt.Sprintf("开始测试：%s，%d 个 IP", selectedDC, len(testIPList)))
+	session.sendWSMessage("log", fmt.Sprintf("开始测试：%s，%d 个 IP", dcLabel, len(testIPList)))
 
 	var results []TestResult
 	var resMutex sync.Mutex

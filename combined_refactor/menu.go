@@ -535,7 +535,7 @@ func runSettingsWizard(fileCfg *cliFileConfig) int {
 		if strings.TrimSpace(fileCfg.NSBDC) != "" {
 			dcCurrent = fileCfg.NSBDC
 		}
-		v, o := askLine("数据中心", dcCurrent, "格式: 数据中心代码（如 HKG/NRT）；输入 0=不限制结果数据中心")
+		v, o := askLine("数据中心", dcCurrent, "格式: 数据中心代码（如 HKG/NRT），多个用英文逗号分隔（如 HKG,SJC,SIN）；输入 0=不限制结果数据中心")
 		if o != promptOK {
 			return o
 		}
@@ -545,7 +545,7 @@ func runSettingsWizard(fileCfg *cliFileConfig) int {
 			fileCfg.NSBDC = v
 		}
 	} else {
-		v, o := askLine("数据中心", dcCurrent, "格式: 数据中心代码（如 HKG/NRT）；输入 0=自动选择最低延迟数据中心")
+		v, o := askLine("数据中心", dcCurrent, "格式: 数据中心代码（如 HKG/NRT），多个用英文逗号分隔（如 HKG,SJC,SIN）；输入 0=自动选择最低延迟数据中心")
 		if o != promptOK {
 			return o
 		}

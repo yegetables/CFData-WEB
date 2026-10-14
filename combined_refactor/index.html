@@ -1736,8 +1736,8 @@
                     </select>
                 </div>
                 <div class="option-item">
-                    <span class="label" title="指定数据中心，留空自动选择">🏢 数据中心</span>
-                    <input id="officialTargetDC" type="text" value="" placeholder="留空自动选择" disabled>
+                    <span class="label" title="指定数据中心，多个用英文逗号分隔（如 HKG,SJC,SIN），留空自动选择">🏢 数据中心</span>
+                    <input id="officialTargetDC" type="text" value="" placeholder="留空自动选择，多个用逗号分隔" disabled>
                 </div>
                 <div class="option-item full-width">
                     <span class="label">📡 扫描方式</span>
@@ -1832,8 +1832,8 @@
                     <input id="nsbSpeedTest" type="number" value="0" placeholder="0 关闭测速">
                 </div>
                 <div class="option-item">
-                    <span class="label" title="按数据中心筛选结果">🏢 数据中心</span>
-                    <input id="nsbTargetDC" type="text" value="" placeholder="留空不限制，如 NRT">
+                    <span class="label" title="按数据中心筛选结果，多个用英文逗号分隔（如 HKG,SJC,SIN）">🏢 数据中心</span>
+                    <input id="nsbTargetDC" type="text" value="" placeholder="留空不限制，多个用逗号分隔，如 NRT,HKG">
                 </div>
                 <div class="option-item">
                     <span class="label" title="表格列数精简或完整">🧾 精简表格</span>
@@ -4319,7 +4319,12 @@
         }
 
         function onTestComplete() {
-            if (currentTestingDC) testedDCs.add(currentTestingDC);
+            if (currentTestingDC) {
+                String(currentTestingDC).split(',').forEach((code) => {
+                    const trimmed = code.trim();
+                    if (trimmed) testedDCs.add(trimmed);
+                });
+            }
             currentTestingDC = '';
             showDCSelection(dcList);
             const status = document.getElementById('currentTestDC');
@@ -4676,18 +4681,37 @@
             switchTab('scan');
         }
 
+        function parseTargetDCCodes(spec) {
+            const seen = new Set();
+            return String(spec || '').split(',')
+                .map((part) => part.trim().toUpperCase())
+                .filter((code) => {
+                    if (!code || seen.has(code)) return false;
+                    seen.add(code);
+                    return true;
+                });
+        }
+
         function maybeStartOfficialAutoTest() {
             if (!officialAutoSpeedPending || officialAutoStage !== 'scan') return false;
-            const targetDC = document.getElementById('officialTargetDC')?.value.trim().toUpperCase() || '';
-            const selected = targetDC ? dcList.find((dc) => String(dc.DataCenter || '').toUpperCase() === targetDC) : dcList[0];
-            if (!selected) {
-                log(targetDC ? `官方自动测速未找到数据中心: ${targetDC}` : '官方自动测速没有可用数据中心');
+            const requested = parseTargetDCCodes(document.getElementById('officialTargetDC')?.value || '');
+            let codes;
+            if (!requested.length) {
+                codes = dcList.length ? [String(dcList[0].DataCenter || '')].filter(Boolean) : [];
+            } else {
+                const available = new Set(dcList.map((dc) => String(dc.DataCenter || '').toUpperCase()));
+                codes = requested.filter((code) => available.has(code));
+                const missing = requested.filter((code) => !available.has(code));
+                if (missing.length) log(`官方自动测速跳过本轮未扫到的数据中心: ${missing.join(',')}`);
+            }
+            if (!codes.length) {
+                log(requested.length ? `官方自动测速未找到数据中心: ${requested.join(',')}` : '官方自动测速没有可用数据中心');
                 officialAutoSpeedPending = false;
                 officialAutoStage = '';
                 return false;
             }
             officialAutoStage = 'test';
-            selectDC(selected.DataCenter);
+            selectDC(codes.join(','));
             return true;
         }
 
